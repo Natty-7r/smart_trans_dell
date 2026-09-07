@@ -1,0 +1,14 @@
+node_modules
+.git
+*.log
+.env.local
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.db
+*.sqlite
+*.sqlite3
+CLAUDE.md
+DEMO_SCRIPT.md
+test-*.js
+*.test.js

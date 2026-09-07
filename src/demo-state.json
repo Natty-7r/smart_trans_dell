@@ -1,0 +1,100 @@
+{
+  "version": "1.0.0",
+  "description": "PRISM demo state for Safaricom Ethiopia executive presentation",
+  "defaultView": "ai",
+  "timeRange": "last7d",
+  "dashboard": {
+    "autoRefreshSeconds": 5,
+    "highlightKpis": ["activeAlerts", "financialImpact", "subscribersAtRisk", "avgHealthScore"],
+    "defaultRegionFilter": "All Regions",
+    "defaultStatusFilter": "All Statuses"
+  },
+  "map": {
+    "initialCenter": [9.0192, 38.7525],
+    "initialZoom": 10,
+    "focusRegion": "Addis Ababa",
+    "highlightStatuses": ["critical", "warning"],
+    "pulseMarkers": true
+  },
+  "explorer": {
+    "defaultEntity": "sites",
+    "defaultSearchQuery": "Bole",
+    "defaultSortField": "health_score",
+    "defaultSortDir": "asc",
+    "pageSize": 20,
+    "demoHighlightSiteId": "TF-0001",
+    "demoHighlightFaultType": "overheating",
+    "queries": {
+      "sites": "Bole",
+      "faults": "overheating",
+      "alerts": "critical",
+      "maintenance": "emergency",
+      "engineers": "Addis"
+    }
+  },
+  "analytics": {
+    "defaultTab": "thermal",
+    "showPredictionBands": true,
+    "anomalyOverlay": true,
+    "timeWindow": "72h"
+  },
+  "aiChat": {
+    "openingQuestion": "Which transformers are at highest failure risk in the next 48 hours, and what specific sensor anomalies are driving the risk scores?",
+    "suggestedPrompts": [
+      "Which transformers are at highest failure risk in the next 48 hours, and what specific sensor anomalies are driving the risk scores?",
+      "What is the 5-year financial impact of deploying PRISM across all 500 monitored sites?",
+      "Show me the thermal degradation trend on the Bole Microwave Link Site and explain what the LSTM model detected.",
+      "How many critical alerts are active right now, and which field engineer should I dispatch first?",
+      "Summarise the pre-PRISM vs post-PRISM fault detection delay improvement and quantify the cost savings.",
+      "Which sites in the Oromia corridor have oil moisture readings above the IEC 60422 caution threshold of 25 ppm?",
+      "What is the current fleet average winding temperature and how many sites are approaching the IEC 60076-7 limit of 140°C?",
+      "Generate an executive summary of today's fleet health status for my CTO morning briefing."
+    ],
+    "contextToInject": {
+      "presentationMode": true,
+      "audience": "executive",
+      "customer": "Safaricom Ethiopia",
+      "focusMetrics": ["detection_delay", "financial_impact", "mttr", "subscribers_at_risk"]
+    }
+  },
+  "demoFlow": [
+    {
+      "step": 1,
+      "view": "ai",
+      "action": "sendOpeningQuestion",
+      "label": "AI Risk Assessment"
+    },
+    {
+      "step": 2,
+      "view": "dashboard",
+      "action": "highlightKpis",
+      "label": "Fleet Command View"
+    },
+    {
+      "step": 3,
+      "view": "map",
+      "action": "zoomAddisAbaba",
+      "label": "Geographic Risk View"
+    },
+    {
+      "step": 4,
+      "view": "analytics",
+      "action": "showThermalForecast",
+      "label": "72-Hour Prediction"
+    },
+    {
+      "step": 5,
+      "view": "explorer",
+      "action": "searchFaultsByType",
+      "label": "Fault Audit Trail"
+    }
+  ],
+  "keyMessages": {
+    "detection": "72-hour reactive delay → 22-minute predictive lead — a 99% improvement in detection",
+    "financial": "$21.2M in five-year cumulative savings against a $1.8M deployment cost",
+    "mttr": "MTTR compressed from 72 hours to under 30 minutes",
+    "subscribers": "50,000+ at-risk subscribers protected across Safaricom Ethiopia's network",
+    "edge": "Dell PowerEdge R760 fires critical alerts in under 30 seconds — independent of WAN connectivity",
+    "compliance": "Full on-premises telemetry processing satisfies ECA Proclamation No. 1148/2019 data residency"
+  }
+}
