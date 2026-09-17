@@ -123,7 +123,7 @@ router.patch('/:id', requireRole('admin', 'regional_manager'), (req, res, next) 
 // POST /api/maintenance-schedules/:id/complete — mark complete
 router.post('/:id/complete', requireRole('admin', 'regional_manager', 'field_technician'), (req, res, next) => {
   try {
-    const completed = MaintenanceSchedule.complete(req.params.id);
+    const completed = MaintenanceSchedule.complete(req.params.id, req.body || {});
     res.json(completed);
   } catch (err) { next(err); }
 });

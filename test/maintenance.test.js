@@ -34,12 +34,28 @@ test('confirmed faults are linked to failure records', () => {
 
 test('creating a schedule validates the site and computes next due on completion', () => {
   const site = getDb().prepare('SELECT site_id FROM transformer_sites LIMIT 1').get().site_id;
-  const sched = MaintenanceSchedule.create({ site_id: site, title: 'Test PM', interval_days: 30 });
-  assert.ok(sched.schedule_id, 'schedule created');
-  assert.strictEqual(sched.site_id, site);
-  const done = MaintenanceSchedule.complete(sched.schedule_id);
+  const eng = getDb().prepare('SELECT engineer_id FROM field_engineers LIMIT 1').get();
+  const created = MaintenanceSchedule.create({
+    site_id: site, title: 'Test PM', interval_days: 30, estimated_cost_usd: 800,
+    assigned_engineer_id: eng && eng.engineer_id
+  });
+  assert.ok(created.schedule_id, 'schedule created');
+  assert.strictEqual(created.site_id, site);
+  assert.strictEqual(created.estimated_cost_usd, 800);
+  assert.ok(created.assigned_engineer_id, 'engineer assigned');
+
+  assert.throws(() => MaintenanceSchedule.complete(created.schedule_id), /actual_cost_usd/);
+
+  const done = MaintenanceSchedule.complete(created.schedule_id, { actual_cost_usd: 520 });
   assert.ok(done.last_completed_date, 'completion date set');
   assert.ok(done.next_due_date > done.last_completed_date, 'next due advanced');
+  assert.strictEqual(done.last_actual_cost_usd, 520);
+  assert.strictEqual(done.completion.saved_usd, 280);
+
+  const record = getDb().prepare('SELECT * FROM maintenance_records WHERE schedule_id = ? ORDER BY maintenance_date DESC LIMIT 1').get(created.schedule_id);
+  assert.ok(record, 'completion wrote a maintenance record');
+  assert.strictEqual(record.cost_usd, 520);
+  assert.strictEqual(record.estimated_cost_usd, 800);
 });
 
 test('creating a schedule for an unknown site is rejected', () => {

@@ -102,9 +102,11 @@ function seedPlatform(db) {
     const insSched = db.prepare(`
       INSERT INTO maintenance_schedules
         (schedule_id, site_id, site_name, region, title, task_type, frequency, interval_days,
-         last_completed_date, next_due_date, assigned_engineer_id, assigned_engineer_name, priority, status, description, created_by)
+         last_completed_date, next_due_date, assigned_engineer_id, assigned_engineer_name, priority, status, description, created_by,
+         estimated_cost_usd)
       VALUES (@schedule_id,@site_id,@site_name,@region,@title,'preventive',@frequency,@interval_days,
-         @last_completed_date,@next_due_date,@assigned_engineer_id,@assigned_engineer_name,@priority,'active',@description,'system')
+         @last_completed_date,@next_due_date,@assigned_engineer_id,@assigned_engineer_name,@priority,'active',@description,'system',
+         @estimated_cost_usd)
     `);
     const sites = db.prepare('SELECT site_id, name, region, health_score, last_inspection_date FROM transformer_sites ORDER BY health_score ASC').all();
     const engPool = db.prepare('SELECT engineer_id, full_name, region FROM field_engineers').all();
@@ -114,12 +116,14 @@ function seedPlatform(db) {
       const eng = engPool.find(e => e.region === s.region) || engPool[i % Math.max(1, engPool.length)] || {};
       const dueIn = (i % 12) * 7 + 5; // spread due dates across ~12 weeks
       const priority = s.health_score < 50 ? 'high' : s.health_score < 70 ? 'medium' : 'low';
+      const estimated = s.health_score < 50 ? 2200 : s.health_score < 70 ? 950 : 420;
       insSched.run({
         schedule_id: sid, site_id: s.site_id, site_name: s.name, region: s.region,
         title: `Quarterly preventive maintenance — ${s.name}`, frequency: 'quarterly', interval_days: 90,
         last_completed_date: daysFromNow(dueIn - 90), next_due_date: daysFromNow(dueIn),
         assigned_engineer_id: eng.engineer_id || null, assigned_engineer_name: eng.full_name || null,
-        priority, description: 'IEC 60076 preventive inspection: oil, thermal, insulation and mechanical checks.'
+        priority, estimated_cost_usd: estimated,
+        description: 'IEC 60076 preventive inspection: oil, thermal, insulation and mechanical checks.'
       });
       // back-link existing history rows for this site to the schedule
       db.prepare('UPDATE maintenance_records SET schedule_id = ? WHERE site_id = ? AND schedule_id IS NULL').run(sid, s.site_id);

@@ -76,21 +76,45 @@
   }
   TT_AUTH.applyGating = applyGating;
 
+  // The user control is a compact avatar button with a dropdown menu — never a
+  // wide inline row — so it can never get squeezed off-screen by an overflowing
+  // topbar (a wide chip appended last was previously the first thing clipped on
+  // narrower viewports, which made "Sign out" unreachable).
   function injectUserChip() {
     var bar = document.getElementById('topbar');
     if (!bar || document.getElementById('tt-user-chip')) return;
     var u = TT_AUTH.user;
     var roleLabel = { admin: 'Administrator', regional_manager: 'Regional Manager', field_technician: 'Field Technician' }[u.role] || u.role;
-    var chip = document.createElement('div');
-    chip.id = 'tt-user-chip';
-    chip.style.cssText = 'display:flex;align-items:center;gap:8px;margin-left:10px;padding:4px 8px;background:var(--card);border:1px solid var(--border);border-radius:8px;font-size:12px';
-    chip.innerHTML =
-      '<div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--accent-dark),var(--accent-orange));display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff">' +
-        (u.full_name || u.username).slice(0, 1).toUpperCase() + '</div>' +
-      '<div style="line-height:1.1"><div style="font-weight:600">' + esc(u.full_name || u.username) + '</div>' +
-        '<div style="color:var(--muted);font-size:10px">' + esc(roleLabel) + (u.region ? ' · ' + esc(u.region) : '') + '</div></div>' +
-      '<button id="tt-logout" title="Sign out" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 4px">⏻</button>';
-    bar.appendChild(chip);
+    var initial = (u.full_name || u.username || '?').slice(0, 1).toUpperCase();
+
+    var wrap = document.createElement('div');
+    wrap.id = 'tt-user-chip';
+    wrap.style.cssText = 'position:relative;margin-left:8px;flex-shrink:0';
+    wrap.innerHTML =
+      '<button id="tt-user-btn" title="Account" style="width:34px;height:34px;border-radius:50%;border:1px solid var(--border);' +
+        'background:linear-gradient(135deg,var(--accent-dark),var(--accent-orange));display:flex;align-items:center;justify-content:center;' +
+        'font-weight:700;color:#fff;font-size:13px;cursor:pointer">' + esc(initial) + '</button>' +
+      '<div id="tt-user-menu" style="display:none;position:absolute;right:0;top:calc(100% + 8px);min-width:220px;' +
+        'background:var(--surface,#1F2937);border:1px solid var(--border,#4B5563);border-radius:10px;' +
+        'box-shadow:0 12px 32px rgba(0,0,0,.45);z-index:200;overflow:hidden">' +
+        '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">' +
+          '<div style="font-weight:600;font-size:13px;color:var(--text)">' + esc(u.full_name || u.username) + '</div>' +
+          '<div style="color:var(--muted);font-size:11px;margin-top:2px">' + esc(roleLabel) + (u.region ? ' · ' + esc(u.region) : '') + '</div>' +
+        '</div>' +
+        '<button id="tt-logout" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;background:none;' +
+          'border:none;color:var(--text);font-size:13px;cursor:pointer;text-align:left">⏻ Sign out</button>' +
+      '</div>';
+    bar.appendChild(wrap);
+
+    var menu = document.getElementById('tt-user-menu');
+    var btn = document.getElementById('tt-user-btn');
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    document.addEventListener('click', function (e) {
+      if (menu.style.display !== 'none' && !wrap.contains(e.target)) menu.style.display = 'none';
+    });
     document.getElementById('tt-logout').addEventListener('click', doLogout);
   }
 

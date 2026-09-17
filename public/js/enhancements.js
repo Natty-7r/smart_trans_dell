@@ -176,6 +176,49 @@
     });
     return h;
   }
+  function siteRegion(sites, siteId) {
+    var s = (sites || []).filter(function (x) { return x.site_id === siteId; })[0];
+    return s ? s.region : '';
+  }
+
+  var _engineers = null;
+  function loadEngineers() {
+    if (_engineers) return Promise.resolve(_engineers);
+    return ttGet('/api/engineers?limit=200&orderBy=full_name&orderDir=ASC').then(function (r) {
+      _engineers = rowsOf(r);
+      return _engineers;
+    }).catch(function () { return []; });
+  }
+  function engineerOptions(engineers, selectedId, region) {
+    var h = '<option value="">Unassigned</option>';
+    var same = [];
+    var other = [];
+    (engineers || []).forEach(function (e) {
+      if (region && e.region === region) same.push(e);
+      else other.push(e);
+    });
+    var render = function (e) {
+      return '<option value="' + attr(e.engineer_id) + '"' + (e.engineer_id === selectedId ? ' selected' : '') + '>' +
+        esc(e.full_name || e.engineer_id) +
+        (e.specialization ? ' — ' + esc(e.specialization) : '') +
+        (e.region && e.region !== region ? ' · ' + esc(e.region) : '') +
+        '</option>';
+    };
+    if (same.length) {
+      h += '<optgroup label="' + esc(region) + '">' + same.map(render).join('') + '</optgroup>';
+      if (other.length) h += '<optgroup label="Other regions">' + other.map(render).join('') + '</optgroup>';
+    } else {
+      h += other.map(render).join('');
+    }
+    return h;
+  }
+  function savingsHtml(est, act) {
+    if (act == null || act === '' || isNaN(Number(act))) return '<span style="color:var(--muted)">—</span>';
+    var s = Number(est || 0) - Number(act);
+    var col = s >= 0 ? CV.success : CV.danger;
+    var verb = s >= 0 ? 'saved ' : 'over ';
+    return '<span style="color:' + col + ';font-weight:600">' + verb + money(Math.abs(s)) + '</span>';
+  }
 
   /* ── live polling management ── */
   var liveTimers = [];
@@ -604,8 +647,11 @@
       var rows = rowsOf(r), st = r.stats || {};
       var mayComplete = canSched() || isRole('field_technician');
       b.innerHTML =
-        '<div class="tt-cards">' + statCard('Total', st.total || 0) + statCard('Active', st.active || 0, CV.info) +
-        statCard('Overdue', st.overdue || 0, CV.danger) + statCard('Due Soon', st.dueSoon || 0, CV.warning) + '</div>' +
+        '<div class="tt-cards">' + statCard('Total', st.total || 0) + statCard('Overdue', st.overdue || 0, CV.danger) +
+        statCard('Due Soon', st.dueSoon || 0, CV.warning) +
+        statCard('Open estimate', money(st.openEstimatedUsd || 0), CV.info) +
+        statCard('Actual spend', money(st.actualSpendUsd || 0), CV.orange) +
+        statCard('Cost saved', money(st.savedUsd || 0), (st.savedUsd || 0) >= 0 ? CV.success : CV.danger) + '</div>' +
         '<div class="tt-toolbar"><input class="tt-input" id="ms-q" placeholder="Search…" value="' + attr(filters.search || '') + '">' +
         '<select class="tt-select" id="ms-status"><option value="">All statuses</option><option value="active">Active</option><option value="completed">Completed</option><option value="paused">Paused</option></select>' +
         (canSched() ? '<button class="tt-btn" id="ms-new" style="margin-left:auto"><i data-lucide="plus"></i>New schedule</button>' : '') + '</div>' +
@@ -623,7 +669,14 @@
         { h: 'Next Due', render: function (s) { return fmtDate(s.next_due_date); } },
         { h: 'Priority', render: function (s) { return badge(s.priority || '—', statusKind(s.priority)); } },
         { h: 'Status', render: function (s) { return badge(s.status || '—', statusKind(s.status)); } },
-        { h: 'Engineer', render: function (s) { return esc(s.assigned_engineer_name || '—'); } },
+        { h: 'Engineer', render: function (s) { return esc(s.assigned_engineer_name || 'Unassigned'); } },
+        { h: 'Estimated', render: function (s) { return money(s.estimated_cost_usd); } },
+        { h: 'Last actual', render: function (s) { return money(s.last_actual_cost_usd); } },
+        { h: 'Saved', render: function (s) {
+          if (s.total_saved_usd == null && s.last_actual_cost_usd == null) return '—';
+          if (s.last_actual_cost_usd != null) return savingsHtml(s.estimated_cost_usd, s.last_actual_cost_usd);
+          return savingsHtml(s.total_estimated_cost_usd, Number(s.total_estimated_cost_usd || 0) - Number(s.total_saved_usd || 0));
+        } },
         { h: '', render: function (s) {
           var h = '';
           if (mayComplete && s.status === 'active') h += '<button class="tt-btn tt-btn-ghost tt-btn-sm" data-complete="' + attr(s.schedule_id) + '">Complete</button> ';
@@ -634,7 +687,8 @@
       var t = table(cols, rows);
       var tc = document.getElementById('ms-table'); tc.innerHTML = ''; tc.appendChild(rows.length ? t : el('div', null, empty('No schedules')));
       tc.querySelectorAll('[data-complete]').forEach(function (btn) { btn.addEventListener('click', function () {
-        ttPost('/api/maintenance-schedules/' + encodeURIComponent(btn.getAttribute('data-complete')) + '/complete').then(function () { toast('Marked complete', 'success'); renderMtn('schedules'); }).catch(function (e) { toast(e.message, 'error'); });
+        var s = rows.filter(function (x) { return x.schedule_id === btn.getAttribute('data-complete'); })[0];
+        completeScheduleModal(s, function () { renderMtn('schedules'); });
       }); });
       tc.querySelectorAll('[data-edit]').forEach(function (btn) { btn.addEventListener('click', function () {
         var s = rows.filter(function (x) { return x.schedule_id === btn.getAttribute('data-edit'); })[0];
@@ -645,7 +699,10 @@
 
   function scheduleModal(s, done) {
     s = s || {};
-    loadSites().then(function (sites) {
+    Promise.all([loadSites(), loadEngineers()]).then(function (pair) {
+      var sites = pair[0];
+      var engineers = pair[1];
+      var region = siteRegion(sites, s.site_id);
       var body =
         '<div class="tt-form-row"><label>Site</label><select class="tt-select" name="site_id">' + siteOptions(sites, s.site_id, 'Select site…') + '</select></div>' +
         '<div class="tt-form-row"><label>Title</label><input class="tt-input" name="title" value="' + attr(s.title || '') + '"></div>' +
@@ -653,19 +710,67 @@
         '<div class="tt-form-row"><label>Interval (days)</label><input class="tt-input" type="number" name="interval_days" value="' + attr(s.interval_days || 90) + '"></div></div>' +
         '<div class="tt-form-grid"><div class="tt-form-row"><label>Next Due Date</label><input class="tt-input" type="date" name="next_due_date" value="' + attr((s.next_due_date || '').slice(0, 10)) + '"></div>' +
         '<div class="tt-form-row"><label>Priority</label><select class="tt-select" name="priority"><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></div></div>' +
-        '<div class="tt-form-row"><label>Assigned Engineer</label><input class="tt-input" name="assigned_engineer_name" value="' + attr(s.assigned_engineer_name || '') + '"></div>' +
+        '<div class="tt-form-row"><label>Assigned Engineer</label><select class="tt-select" name="assigned_engineer_id">' + engineerOptions(engineers, s.assigned_engineer_id, region) + '</select></div>' +
+        '<div class="tt-form-row"><label>Estimated cost (USD)</label><input class="tt-input" type="number" min="0" step="0.01" name="estimated_cost_usd" value="' + attr(s.estimated_cost_usd != null ? s.estimated_cost_usd : '') + '" placeholder="Planned visit budget"></div>' +
+        (s.last_actual_cost_usd != null ? '<div class="tt-form-row"><label>Last actual / savings</label><div>' + money(s.last_actual_cost_usd) + ' · ' + savingsHtml(s.estimated_cost_usd, s.last_actual_cost_usd) + '</div></div>' : '') +
         '<div class="tt-form-row"><label>Description</label><textarea class="tt-textarea" name="description">' + esc(s.description || '') + '</textarea></div>';
       var m = modal(s.schedule_id ? 'Edit Schedule' : 'New Schedule', body, function (form) {
         var payload = {
           site_id: fieldVal(form, 'site_id'), title: fieldVal(form, 'title'), frequency: fieldVal(form, 'frequency'),
           interval_days: parseInt(fieldVal(form, 'interval_days')) || 90, next_due_date: fieldVal(form, 'next_due_date'),
-          priority: fieldVal(form, 'priority'), assigned_engineer_name: fieldVal(form, 'assigned_engineer_name'), description: fieldVal(form, 'description')
+          priority: fieldVal(form, 'priority'),
+          assigned_engineer_id: fieldVal(form, 'assigned_engineer_id') || null,
+          estimated_cost_usd: fieldVal(form, 'estimated_cost_usd') === '' ? null : Number(fieldVal(form, 'estimated_cost_usd')),
+          description: fieldVal(form, 'description')
         };
         if (!payload.site_id || !payload.title) throw new Error('Site and title are required');
+        if (payload.estimated_cost_usd == null || isNaN(payload.estimated_cost_usd)) throw new Error('Estimated cost is required');
         var p = s.schedule_id ? ttPatch('/api/maintenance-schedules/' + encodeURIComponent(s.schedule_id), payload) : ttPost('/api/maintenance-schedules', payload);
         return p.then(function () { toast('Saved', 'success'); done(); });
       });
       if (s.priority) m.form.querySelector('[name="priority"]').value = s.priority;
+      var siteSel = m.form.querySelector('[name="site_id"]');
+      var engSel = m.form.querySelector('[name="assigned_engineer_id"]');
+      siteSel.addEventListener('change', function () {
+        var keep = engSel.value;
+        engSel.innerHTML = engineerOptions(engineers, keep, siteRegion(sites, siteSel.value));
+      });
+    });
+  }
+
+  function completeScheduleModal(s, done) {
+    s = s || {};
+    loadEngineers().then(function (engineers) {
+      var est = Number(s.estimated_cost_usd) || 0;
+      var body =
+        '<div class="tt-form-row"><label>Site</label><div>' + esc(s.site_name || s.site_id) + '</div></div>' +
+        '<div class="tt-form-row"><label>Work</label><div>' + esc(s.title || 'Scheduled maintenance') + '</div></div>' +
+        '<div class="tt-form-row"><label>Assigned engineer</label><select class="tt-select" name="assigned_engineer_id">' +
+          engineerOptions(engineers, s.assigned_engineer_id, s.region) + '</select></div>' +
+        '<div class="tt-form-grid"><div class="tt-form-row"><label>Estimated cost</label><div style="font-weight:600">' + money(est) + '</div></div>' +
+        '<div class="tt-form-row"><label>Actual cost (USD)</label><input class="tt-input" type="number" min="0" step="0.01" name="actual_cost_usd" value="" placeholder="Enter actual spend" required></div></div>' +
+        '<div class="tt-form-row"><label>This visit savings</label><div id="tt-save-preview">' + savingsHtml(est, '') + '</div></div>' +
+        '<div class="tt-form-row"><label>Notes</label><textarea class="tt-textarea" name="notes" placeholder="Parts used, findings, access notes…"></textarea></div>';
+      var m = modal('Complete maintenance', body, function (form) {
+        var actual = fieldVal(form, 'actual_cost_usd');
+        if (actual === '' || isNaN(Number(actual)) || Number(actual) < 0) throw new Error('Actual cost is required');
+        var payload = {
+          actual_cost_usd: Number(actual),
+          assigned_engineer_id: fieldVal(form, 'assigned_engineer_id') || null,
+          notes: fieldVal(form, 'notes')
+        };
+        return ttPost('/api/maintenance-schedules/' + encodeURIComponent(s.schedule_id) + '/complete', payload).then(function (r) {
+          var saved = r && r.completion ? r.completion.saved_usd : (est - Number(actual));
+          var msg = saved >= 0 ? 'Completed — saved ' + money(saved) + ' vs estimate' : 'Completed — ' + money(Math.abs(saved)) + ' over estimate';
+          toast(msg, saved >= 0 ? 'success' : 'info');
+          done();
+        });
+      }, 'Complete visit');
+      var inp = m.form.querySelector('[name="actual_cost_usd"]');
+      var preview = m.form.querySelector('#tt-save-preview');
+      var updatePreview = function () { preview.innerHTML = savingsHtml(est, inp.value); };
+      inp.addEventListener('input', updatePreview);
+      setTimeout(function () { inp.focus(); }, 50);
     });
   }
 
@@ -716,6 +821,9 @@
       '<div class="tt-form-row"><label>Next Due</label><div>' + fmtDate(s.next_due_date) + '</div></div>' +
       '<div class="tt-form-row"><label>Priority</label><div>' + badge(s.priority || '—', statusKind(s.priority)) + '</div></div>' +
       '<div class="tt-form-row"><label>Status</label><div>' + badge(s.status || '—', statusKind(s.status)) + '</div></div>' +
+      '<div class="tt-form-row"><label>Assigned engineer</label><div>' + esc(s.assigned_engineer_name || 'Unassigned') + '</div></div>' +
+      '<div class="tt-form-row"><label>Estimated cost</label><div>' + money(s.estimated_cost_usd) + '</div></div>' +
+      '<div class="tt-form-row"><label>Last actual / savings</label><div>' + money(s.last_actual_cost_usd) + ' · ' + savingsHtml(s.estimated_cost_usd, s.last_actual_cost_usd) + '</div></div>' +
       '<div class="tt-form-row"><label>Description</label><div>' + esc(s.description || '—') + '</div></div>', null);
   }
 
@@ -803,7 +911,11 @@
       var add = function (arr, type, color, dateKey, labelFn) {
         (arr || []).forEach(function (x) { items.push({ type: type, color: color, date: x[dateKey] || x.created_at || x.timestamp, label: labelFn(x) }); });
       };
-      add(r.records, 'Maintenance', CV.success, 'performed_at', function (x) { return x.task_type || x.notes || 'Maintenance record'; });
+      add(r.records, 'Maintenance', CV.success, 'performed_at', function (x) {
+        var cost = x.cost_usd != null ? ' · ' + money(x.cost_usd) : '';
+        var save = (x.estimated_cost_usd != null && x.cost_usd != null) ? ' · ' + savingsHtml(x.estimated_cost_usd, x.cost_usd).replace(/<[^>]+>/g, '') : '';
+        return (x.primary_task || x.task_type || x.notes || 'Maintenance record') + cost + save;
+      });
       add(r.faults, 'Fault', CV.orange, 'timestamp', function (x) { return x.fault_type || x.description || 'Fault event'; });
       add(r.alerts, 'Alert', CV.warning, 'timestamp', function (x) { return x.alert_message || x.alert_type || 'Alert'; });
       add(r.failures, 'Failure', CV.danger, 'created_at', function (x) { return (x.failure_type || 'Failure') + (x.component ? ' — ' + x.component : ''); });

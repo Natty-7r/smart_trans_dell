@@ -150,6 +150,11 @@ function extendSchema(db) {
       priority TEXT DEFAULT 'medium',
       status TEXT DEFAULT 'active',                      -- active | paused | completed
       description TEXT,
+      estimated_cost_usd REAL,
+      last_actual_cost_usd REAL,
+      total_estimated_cost_usd REAL DEFAULT 0,
+      total_actual_cost_usd REAL DEFAULT 0,
+      total_saved_usd REAL DEFAULT 0,
       created_by TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -246,6 +251,56 @@ function extendSchema(db) {
   addColumnIfMissing(db, 'inspection_logs', 'schedule_id', 'TEXT');
   // Failure linkage from a fault (a confirmed fault becomes a failure record).
   addColumnIfMissing(db, 'fault_events', 'failure_id', 'TEXT');
+
+  // Estimated vs actual cost tracking on schedules (completion captures actual).
+  addColumnIfMissing(db, 'maintenance_schedules', 'estimated_cost_usd', 'REAL');
+  addColumnIfMissing(db, 'maintenance_schedules', 'last_actual_cost_usd', 'REAL');
+  addColumnIfMissing(db, 'maintenance_schedules', 'total_estimated_cost_usd', 'REAL DEFAULT 0');
+  addColumnIfMissing(db, 'maintenance_schedules', 'total_actual_cost_usd', 'REAL DEFAULT 0');
+  addColumnIfMissing(db, 'maintenance_schedules', 'total_saved_usd', 'REAL DEFAULT 0');
+  addColumnIfMissing(db, 'maintenance_records', 'estimated_cost_usd', 'REAL');
+
+  db.prepare(`
+    UPDATE maintenance_schedules
+    SET estimated_cost_usd = CASE
+      WHEN priority = 'high' THEN 2200
+      WHEN priority = 'medium' THEN 950
+      ELSE 420
+    END
+    WHERE estimated_cost_usd IS NULL
+  `).run();
+
+  // One-time backfill of running totals from existing linked history.
+  db.prepare(`
+    UPDATE maintenance_schedules SET
+      last_actual_cost_usd = (
+        SELECT cost_usd FROM maintenance_records
+        WHERE maintenance_records.schedule_id = maintenance_schedules.schedule_id
+        ORDER BY maintenance_date DESC LIMIT 1
+      ),
+      total_actual_cost_usd = COALESCE((
+        SELECT SUM(cost_usd) FROM maintenance_records
+        WHERE maintenance_records.schedule_id = maintenance_schedules.schedule_id
+      ), 0),
+      total_estimated_cost_usd = COALESCE((
+        SELECT COUNT(*) FROM maintenance_records
+        WHERE maintenance_records.schedule_id = maintenance_schedules.schedule_id
+      ), 0) * COALESCE(estimated_cost_usd, 0),
+      total_saved_usd = (
+        COALESCE((
+          SELECT COUNT(*) FROM maintenance_records
+          WHERE maintenance_records.schedule_id = maintenance_schedules.schedule_id
+        ), 0) * COALESCE(estimated_cost_usd, 0)
+      ) - COALESCE((
+        SELECT SUM(cost_usd) FROM maintenance_records
+        WHERE maintenance_records.schedule_id = maintenance_schedules.schedule_id
+      ), 0)
+    WHERE last_actual_cost_usd IS NULL
+      AND EXISTS (
+        SELECT 1 FROM maintenance_records
+        WHERE maintenance_records.schedule_id = maintenance_schedules.schedule_id
+      )
+  `).run();
 }
 
 module.exports = { extendSchema, addColumnIfMissing };
