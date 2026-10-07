@@ -10,7 +10,7 @@ const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 
 let _anthropic = null;
 function getAnthropic() {
-  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!_anthropic) _anthropic = new Anthropic({ apiKey:'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'});
   return _anthropic;
 }
 
