@@ -4747,8 +4747,9 @@
     async function initMap() {
       if (state.map) { state.map.invalidateSize(); return; }
       state.map = L.map('leaflet-map').setView([9.0054, 38.7636], 10);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '© CartoDB', subdomains: 'abcd', maxZoom: 19
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ',
+        maxZoom: 16
       }).addTo(state.map);
       await refreshMapMarkers();
     }
