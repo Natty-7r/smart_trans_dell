@@ -1,4 +1,4 @@
-require('dotenv').config({ override: true });
+require('dotenv').config({ override: false });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -27,7 +27,7 @@ app.get('/health', (req, res) => {
   let dataLoaded = false;
   try {
     dataLoaded = getDb().prepare('SELECT COUNT(*) as c FROM transformer_sites').get().c > 0;
-  } catch (_) {}
+  } catch (_) { }
   res.json({
     status: 'ok',
     port: PORT,
