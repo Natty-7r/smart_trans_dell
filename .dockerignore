@@ -1,7 +1,9 @@
 node_modules
 .git
 *.log
-.env.local
+.env                ← ADD THIS
+.env.*              ← and this, to catch .env.production etc.
+!.env.example       ← keep .env.example if you have one
 data/*.db
 data/*.db-shm
 data/*.db-wal
